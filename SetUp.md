@@ -1,3 +1,265 @@
+Deployment Guide: Crestoville Health Informatics Institute (CHII) on Linode
+This guide walks you through deploying the CHII Flask web application on a Linode server running Ubuntu 22.04 LTS, connecting it to a custom domain (e.g., crestovillehealth.org), and securing it with HTTPS.
+Prerequisites
+Linode account with an Ubuntu 22.04 LTS instance (2GB RAM min, 4GB+ recommended).
+
+crestoville_health_project.zip (22MB deployment package).
+
+Domain name (e.g., crestovillehealth.org) and access to DNS settings.
+
+SSH client (e.g., Terminal, PuTTY).
+
+Step 1: Prepare the Linode Server
+Provision Linode Instance:
+Create a new Linode with Ubuntu 22.04 LTS.
+
+Note the public IP (e.g., 192.168.1.1).
+
+SSH into Server:
+bash
+
+ssh root@192.168.1.1
+
+Update and Install Packages:
+bash
+
+apt update && apt upgrade -y
+apt install -y python3-pip python3-dev build-essential libssl-dev libffi-dev nginx postgresql postgresql-contrib
+
+Create Non-Root User:
+bash
+
+adduser --gecos "" crestoville
+usermod -aG sudo crestoville
+su - crestoville
+
+Step 2: Transfer and Set Up the Application
+Create Application Directory:
+bash
+
+sudo mkdir -p /var/www/crestoville
+sudo chown crestoville:crestoville /var/www/crestoville
+cd /var/www/crestoville
+
+Transfer ZIP File:
+From local machine:
+bash
+
+scp crestoville_health_project.zip crestoville@192.168.1.1:/var/www/crestoville/
+
+On server:
+bash
+
+unzip crestoville_health_project.zip
+
+Set Up Virtual Environment:
+bash
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r project_requirements.txt
+pip install gunicorn
+
+Configure Environment Variables:
+bash
+
+nano .env
+
+Add:
+bash
+
+DATABASE_URL=postgresql://user:password@ep-plain-paper-a4qlrr4z.us-east-1.aws.neon.tech/neondb?sslmode=require&connect_timeout=10&client_encoding=utf8&application_name=crestoville-health
+SESSION_SECRET=your_very_secure_random_string_here
+OPENAI_API_KEY=your_openai_api_key
+STRIPE_SECRET_KEY=your_stripe_secret_key
+STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+SITE_URL=https://crestovillehealth.org
+
+Step 3: Database Setup
+Option 1: Use Neon.tech (Recommended)
+Verify DATABASE_URL in .env.
+
+Test connection:
+bash
+
+source venv/bin/activate
+python -c "import os; from sqlalchemy import create_engine; engine = create_engine(os.getenv('DATABASE_URL')); conn = engine.connect(); print('Connected!'); conn.close()"
+
+Option 2: Self-Hosted PostgreSQL
+Set Up Database:
+bash
+
+sudo -u postgres psql
+CREATE DATABASE crestoville;
+CREATE USER crestovilleuser WITH PASSWORD 'secure_password';
+GRANT ALL PRIVILEGES ON DATABASE crestoville TO crestovilleuser;
+\q
+
+Update .env:
+bash
+
+DATABASE_URL=postgresql://crestovilleuser:secure_password@localhost:5432/crestoville
+
+Restore Backup:
+Generate backup locally:
+bash
+
+python database_backup.py backup
+
+Transfer to Linode:
+bash
+
+scp backup.sql crestoville@192.168.1.1:/var/www/crestoville/
+
+Restore:
+bash
+
+psql -U crestovilleuser -d crestoville -f backup.sql
+
+Step 4: Configure Gunicorn Service
+Create Service File:
+bash
+
+sudo nano /etc/systemd/system/crestoville.service
+
+Add:
+ini
+
+[Unit]
+Description=Gunicorn instance for Crestoville Health Informatics
+After=network.target
+
+[Service]
+User=crestoville
+Group=www-data
+WorkingDirectory=/var/www/crestoville
+Environment="PATH=/var/www/crestoville/venv/bin"
+EnvironmentFile=/var/www/crestoville/.env
+ExecStart=/var/www/crestoville/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 --timeout 120 main:app
+
+[Install]
+WantedBy=multi-user.target
+
+Start and Enable:
+bash
+
+sudo systemctl start crestoville
+sudo systemctl enable crestoville
+
+Check Status:
+bash
+
+sudo systemctl status crestoville
+
+Step 5: Configure Nginx as Reverse Proxy
+Create Nginx Config:
+bash
+
+sudo nano /etc/nginx/sites-available/crestoville
+
+Add:
+nginx
+
+server {
+    listen 80;
+    server_name crestovillehealth.org www.crestovillehealth.org;
+
+    location / {
+        include proxy_params;
+        proxy_pass http://127.0.0.1:5000;
+        proxy_buffering off;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /static/ {
+        alias /var/www/crestoville/static/;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000";
+    }
+}
+
+Enable Site:
+bash
+
+sudo ln -s /etc/nginx/sites-available/crestoville /etc/nginx/sites-enabled
+sudo nginx -t
+sudo systemctl restart nginx
+
+Step 6: Set Up SSL with Let’s Encrypt
+Install Certbot:
+bash
+
+sudo apt install -y certbot python3-certbot-nginx
+
+Generate Certificate:
+bash
+
+sudo certbot --nginx -d crestovillehealth.org -d www.crestovillehealth.org
+
+Follow prompts to set up HTTPS.
+
+Verify:
+Visit https://crestovillehealth.org to confirm the lock icon.
+
+Step 7: Link to Custom Domain
+Configure DNS:
+In your registrar’s DNS settings:
+A Record:
+
+Type: A
+Host: @
+Value: 192.168.1.1  # Your Linode IP
+TTL: 3600
+
+CNAME Record:
+
+Type: CNAME
+Host: www
+Value: crestovillehealth.org
+TTL: 3600
+
+Wait for Propagation:
+Check with:
+bash
+
+dig crestovillehealth.org
+
+Test:
+Visit https://crestovillehealth.org.
+
+Step 8: Post-Deployment Tasks
+Set Up Backups:
+bash
+
+crontab -e
+
+Add:
+bash
+
+0 2 * * * cd /var/www/crestoville && /var/www/crestoville/venv/bin/python database_backup.py backup >> /var/log/crestoville_backup.log 2>&1
+
+Monitor Logs:
+bash
+
+sudo journalctl -u crestoville.service
+
+Change Admin Password:
+Log in at /admin/dashboard as admin@crestovillehealth.org and update.
+
+Test Features:
+Check /crestoville-gpt, Stripe payments, and CHIES portal.
+
+Troubleshooting
+Database Issues: Verify DATABASE_URL and Neon connectivity.
+
+App Fails to Start: Check logs (journalctl -u crestoville).
+
+SSL Problems: Re-run Certbot or review Nginx config.
+
+
+##########################
 Below is a step-by-step guide to deploy the Crestoville Health Informatics Institute (CHII) Flask web application onto your Linode server, rewritten from the provided documentation. This guide assumes you have a Linode server running Ubuntu 22.04 LTS and covers transferring the application, setting up the environment, configuring the server, and linking it to a custom domain. Code snippets and commands are included for clarity.
 Step-by-Step Guide to Deploy CHII Flask App on Linode
 Step 1: Prepare Your Linode Server

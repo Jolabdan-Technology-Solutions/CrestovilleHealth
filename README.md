@@ -343,3 +343,111 @@ Support Email: info@crestovillehealth.org
 Phone: (404) 285-5999
 Address: 957 Main Street, Stone Mountain, GA 30083
 This comprehensive guide should provide everything you need for successful deployment and ongoing maintenance of the Crestoville Health Informatics Institute platform.
+
+
+Linking Your Crestoville Health Project to a Custom Domain
+Here's a complete guide to setting up your custom domain with your Crestoville Health Informatics Institute website:
+
+1. Purchase and Prepare Your Domain
+If you already have a domain (like crestovillehealth.org):
+
+Log in to your domain registrar (GoDaddy, Namecheap, Google Domains, etc.)
+Make sure the domain is active and you have access to DNS settings
+If you need to purchase a domain:
+
+Choose a registrar (Namecheap, GoDaddy, Google Domains, etc.)
+Search for availability of your preferred domain (e.g., crestovillehealth.org)
+Complete the purchase process
+2. Configure DNS Records
+You'll need to set up DNS records to point your domain to your server:
+
+For a Root Domain (crestovillehealth.org)
+Add these records in your domain registrar's DNS management section:
+
+A Record:
+
+Type: A
+Host: @ (or leave blank)
+Value: Your server's IP address (e.g., 123.456.789.10)
+TTL: 3600 (or default)
+CNAME for www subdomain:
+
+Type: CNAME
+Host: www
+Value: crestovillehealth.org (your root domain)
+TTL: 3600 (or default)
+For a Subdomain (app.crestovillehealth.org)
+Add this record:
+
+Type: A
+Host: app
+Value: Your server's IP address
+TTL: 3600 (or default)
+Note: DNS changes typically take 24-48 hours to fully propagate across the internet.
+
+3. Update Nginx Configuration
+Once your domain is pointing to your server, update your Nginx configuration:
+
+Edit your Nginx site configuration:
+
+sudo nano /etc/nginx/sites-available/crestoville
+Update the server_name directive with your domain:
+
+server {
+    listen 80;
+    server_name crestovillehealth.org www.crestovillehealth.org;
+    
+    # Rest of your configuration...
+}
+Save and restart Nginx:
+
+sudo systemctl restart nginx
+4. Set Up SSL Certificate
+Secure your domain with HTTPS:
+
+Install Certbot (if not already installed):
+
+sudo apt install -y certbot python3-certbot-nginx
+Generate certificate for your domain:
+
+sudo certbot --nginx -d crestovillehealth.org -d www.crestovillehealth.org
+Follow the prompts to complete the SSL setup:
+
+Provide your email address for renewal notifications
+Agree to the terms of service
+Choose whether to redirect HTTP to HTTPS (recommended)
+Verify SSL setup by visiting https://crestovillehealth.org
+
+5. Application Configuration Updates
+Update your application to work correctly with your custom domain:
+
+Edit your environment variables if needed:
+
+sudo nano /var/www/crestoville/.env
+Add or update the SITE_URL variable:
+
+SITE_URL=https://crestovillehealth.org
+Restart your application:
+
+sudo systemctl restart crestoville
+6. Additional Considerations
+Set Up Email for Your Domain (Optional)
+Configure MX records for email handling
+Update application email settings in the .env file:
+MAIL_DEFAULT_SENDER=no-reply@crestovillehealth.org
+Domain Auto-Renewal
+Enable auto-renewal at your domain registrar
+Keep payment information updated to prevent domain expiration
+Set calendar reminders for renewal dates as a backup
+Monitoring Domain Health
+Set up monitoring for your domain (Uptime Robot, Pingdom, etc.)
+Check SSL certificate expiration dates regularly
+Verify DNS settings periodically
+7. Testing Your Custom Domain
+After setup is complete:
+
+Visit your website through your custom domain
+Test all main functions (login, signup, etc.)
+Check that all assets load correctly
+Verify SSL security (lock icon in browser)
+Your Crestoville Health Informatics Institute website should now be fully accessible through your custom domain with proper security!
